@@ -1,0 +1,16 @@
+{
+  "cameras": [
+    {
+      "id": "camera_1771247951527_5mj82b11m",
+      "latitude": 51.47159928349266,
+      "longitude": -3.175117525153203,
+      "rotation": 0,
+      "fieldOfView": 90,
+      "range": 10,
+      "height": 2.5,
+      "tilt": -30,
+      "name": "Camera 1",
+      "floorId": "m_52a66c6ededae604"
+    }
+  ]
+}

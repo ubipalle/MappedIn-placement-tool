@@ -1,0 +1,124 @@
+{
+  "mounts": [
+    {
+      "id": "wall-mount-wide",
+      "name": "Wall Mount - Wide Angle",
+      "description": "Fixed wall mount with 110° FOV. Click on a wall to place - rotation set at 45° from wall.",
+      "snapsToWalls": true,
+      "parameters": {
+        "fieldOfView": 84,
+        "range": 20,
+        "height": 2.5,
+        "tilt": 0,
+        "rotation": 45
+      },
+      "locked": {
+        "fieldOfView": true,
+        "range": false,
+        "height": false,
+        "tilt": true,
+        "rotation": true
+      }
+    },
+    {
+      "id": "wall-mount-narrow",
+      "name": "Wall Mount - Narrow",
+      "description": "Fixed wall mount with 60° FOV. Click on a wall to place - rotation set at 45° from wall.",
+      "snapsToWalls": true,
+      "parameters": {
+        "fieldOfView": 60,
+        "range": 30,
+        "height": 2.5,
+        "tilt": -25,
+        "rotation": 0
+      },
+      "locked": {
+        "fieldOfView": true,
+        "range": false,
+        "height": true,
+        "tilt": true,
+        "rotation": true
+      }
+    },
+    {
+      "id": "ceiling-mount",
+      "name": "Ceiling Mount",
+      "description": "Ceiling-mounted dome camera. Click anywhere to place. Rotation and tilt adjustable.",
+      "snapsToWalls": false,
+      "parameters": {
+        "fieldOfView": 90,
+        "range": 15,
+        "height": 3.0,
+        "tilt": -60,
+        "rotation": 0
+      },
+      "locked": {
+        "fieldOfView": true,
+        "range": false,
+        "height": true,
+        "tilt": false,
+        "rotation": false
+      }
+    },
+    {
+      "id": "corner-mount",
+      "name": "Corner Mount",
+      "description": "Corner bracket mount. Click on a wall to place - rotation set at 45° from wall.",
+      "snapsToWalls": true,
+      "parameters": {
+        "fieldOfView": 120,
+        "range": 18,
+        "height": 2.8,
+        "tilt": -35,
+        "rotation": 45
+      },
+      "locked": {
+        "fieldOfView": true,
+        "range": false,
+        "height": true,
+        "tilt": false,
+        "rotation": true
+      }
+    },
+    {
+      "id": "ptz-mount",
+      "name": "PTZ Mount",
+      "description": "Pan-Tilt-Zoom mount. Click anywhere to place. All parameters adjustable except height.",
+      "snapsToWalls": false,
+      "parameters": {
+        "fieldOfView": 70,
+        "range": 40,
+        "height": 3.5,
+        "tilt": -20,
+        "rotation": 0
+      },
+      "locked": {
+        "fieldOfView": false,
+        "range": false,
+        "height": true,
+        "tilt": false,
+        "rotation": false
+      }
+    },
+    {
+      "id": "fixed-mount",
+      "name": "Fixed Mount (Test)",
+      "description": "All parameters are locked - for testing only.",
+      "snapsToWalls": false,
+      "parameters": {
+        "fieldOfView": 90,
+        "range": 25,
+        "height": 2.5,
+        "tilt": -30,
+        "rotation": 0
+      },
+      "locked": {
+        "fieldOfView": true,
+        "range": true,
+        "height": true,
+        "tilt": true,
+        "rotation": true
+      }
+    }
+  ]
+}
