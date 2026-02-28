@@ -57,8 +57,78 @@ function getWallSegments(mapData: any): Segment[] {
 }
 
 /**
- * Calculate the Viewing Cone as a Horizontal Frustum Sliced by Height Layers
- * Returns layers in DESCENDING order (Camera -> Floor) to fix thickness rendering.
+ * Calculate the inner radius (near edge) and outer radius (far edge) of the
+ * vertical FOV cone at a given vertical offset from the camera.
+ * 
+ * The optical axis is defined by camera.tilt:
+ *   tilt =   0° → horizontal (optical axis parallel to floor)
+ *   tilt = -90° → straight down (optical axis perpendicular to floor)
+ * 
+ * Depression angle α = -tilt (positive when looking down)
+ * 
+ * The vertical FOV spreads symmetrically around the optical axis:
+ *   - Lower edge (more vertical):  depression = α + vFOV/2
+ *   - Upper edge (more horizontal): depression = α - vFOV/2
+ * 
+ * At a given deltaZ (vertical distance below camera), a point at horizontal
+ * distance d has depression angle = atan(deltaZ / d).
+ * 
+ * The point is visible when:
+ *   α - vFOV/2 ≤ atan(deltaZ / d) ≤ α + vFOV/2
+ * 
+ * Solving for d gives:
+ *   d_near (inner) = deltaZ / tan(α + vFOV/2)  [when α + vFOV/2 < 90°]
+ *   d_far (outer)  = deltaZ / tan(α - vFOV/2)  [when α - vFOV/2 > 0°]
+ */
+function getVerticalFOVRadii(
+  deltaZ: number,
+  tiltDeg: number,
+  range: number
+): { innerRadius: number; outerRadius: number } {
+  // Depression angle (positive = looking down)
+  const alpha = (-tiltDeg) * Math.PI / 180;
+  const halfVFOV = VERTICAL_HALF_ANGLE;
+
+  // Near edge: lower edge of vertical FOV (more vertical / closer to camera on floor)
+  const nearAngle = alpha + halfVFOV;
+  let innerRadius: number;
+  if (nearAngle >= Math.PI / 2) {
+    // Lower edge points straight down or beyond → cone reaches directly below camera
+    innerRadius = 0;
+  } else if (nearAngle <= 0) {
+    // Lower edge points upward → nothing visible at this height
+    innerRadius = range + 1; // beyond range, effectively invisible
+  } else {
+    innerRadius = deltaZ / Math.tan(nearAngle);
+  }
+
+  // Far edge: upper edge of vertical FOV (more horizontal / farther from camera on floor)
+  const farAngle = alpha - halfVFOV;
+  let outerRadius: number;
+  if (farAngle <= 0) {
+    // Upper edge is horizontal or points upward → extends to range limit
+    outerRadius = range;
+  } else if (farAngle >= Math.PI / 2) {
+    // Upper edge points straight down → nothing visible at this distance
+    outerRadius = 0;
+  } else {
+    outerRadius = deltaZ / Math.tan(farAngle);
+    outerRadius = Math.min(outerRadius, range); // clamp to sensor range
+  }
+
+  return { innerRadius, outerRadius };
+}
+
+/**
+ * Calculate the Viewing Cone as a Horizontal Frustum Sliced by Height Layers.
+ * 
+ * Now properly accounts for camera tilt:
+ * - The optical axis direction determines where the cone projects
+ * - The vertical FOV spreads symmetrically around the optical axis
+ * - Each height layer has both an inner radius (blind spot) and outer radius
+ *   derived from the tilt angle and vertical FOV
+ * 
+ * Returns layers in DESCENDING order (Camera -> Floor) for correct thickness rendering.
  */
 export function calculateViewingCone3D(
   camera: Camera,
@@ -72,7 +142,7 @@ export function calculateViewingCone3D(
   const walls = mapData ? getWallSegments(mapData) : [];
   const origin: Point = { x: camera.longitude, y: camera.latitude };
   
-  // 2. Pre-calculate Rays (Outer Boundary)
+  // 2. Pre-calculate Rays (horizontal sweep for wall intersection)
   const halfFOV = camera.fieldOfView / 2;
   const camRotation = (typeof camera.rotation === 'number' && !isNaN(camera.rotation)) ? camera.rotation : 0;
   const startAngle = camRotation - halfFOV;
@@ -88,7 +158,7 @@ export function calculateViewingCone3D(
     
     const raySegment: Segment = { p1: origin, p2: maxPoint };
     
-    // Check wall intersections to find Outer Limit
+    // Check wall intersections to find horizontal limit
     let closestDist = camera.range; 
     
     for (const wall of walls) {
@@ -103,42 +173,53 @@ export function calculateViewingCone3D(
     rays.push({ angle: angleDeg, maxDist: closestDist });
   }
 
-  // 3. Generate 3D Layers
+  // 3. Generate 3D Layers with tilt-aware inner/outer radii
   const layers: Array<{ height: number; vertices: Array<{ latitude: number; longitude: number }> }> = [];
+  const tilt = (typeof camera.tilt === 'number' && !isNaN(camera.tilt)) ? camera.tilt : -30;
 
   // Loop Descending: Start from Camera Height (t=1), go down to Floor (t=0)
   for (let i = numLayers - 1; i >= 0; i--) {
     const t = i / (numLayers - 1); 
     const currentHeight = camera.height * t;
-    
-    // Calculate Inner Radius for this height
-    // At Camera (deltaZ=0) -> d_min = 0 (Full View)
-    // At Floor (deltaZ=H) -> d_min = Large (Blind Spot)
-    const deltaZ = Math.abs(camera.height - currentHeight);
-    const innerRadius = deltaZ / Math.tan(VERTICAL_HALF_ANGLE);
+    const deltaZ = camera.height - currentHeight;
+
+    // Skip if deltaZ is zero (at camera height) — no footprint
+    if (deltaZ < 0.001) continue;
+
+    // Calculate tilt-aware inner and outer radii for this height layer
+    const { innerRadius, outerRadius } = getVerticalFOVRadii(deltaZ, tilt, camera.range);
+
+    // Skip if no visible area at this height
+    if (innerRadius >= outerRadius) continue;
 
     const layerVertices: Point[] = [];
 
     // Part A: Outer Boundary (End -> Start, CCW)
+    // Each ray's effective outer limit = min(wall distance, tilt-based outer radius)
+    let hasVertices = false;
     for (let r = rays.length - 1; r >= 0; r--) {
       const ray = rays[r];
-      if (ray.maxDist > innerRadius) {
-         const p = destinationPoint(camera.latitude, camera.longitude, ray.maxDist, ray.angle);
+      const effectiveOuter = Math.min(ray.maxDist, outerRadius);
+      if (effectiveOuter > innerRadius) {
+         const p = destinationPoint(camera.latitude, camera.longitude, effectiveOuter, ray.angle);
          layerVertices.push({ x: p.longitude, y: p.latitude });
+         hasVertices = true;
       }
     }
 
     // Part B: Inner Boundary (Start -> End, CW)
-    if (layerVertices.length > 0) {
+    if (hasVertices && innerRadius > 0.01) {
         for (let r = 0; r < rays.length; r++) {
             const ray = rays[r];
-            if (ray.maxDist > innerRadius) {
-                const dist = Math.max(0.01, innerRadius);
-                const p = destinationPoint(camera.latitude, camera.longitude, dist, ray.angle);
+            const effectiveOuter = Math.min(ray.maxDist, outerRadius);
+            if (effectiveOuter > innerRadius) {
+                const p = destinationPoint(camera.latitude, camera.longitude, innerRadius, ray.angle);
                 layerVertices.push({ x: p.longitude, y: p.latitude });
             }
         }
-        
+    }
+
+    if (layerVertices.length > 2) {
         // Close polygon
         layerVertices.push(layerVertices[0]);
         
@@ -198,20 +279,15 @@ export function calculateAngle(centerLat: number, centerLng: number, pointLat: n
 }
 
 export function calculateViewingCone(camera: Camera): Array<{ latitude: number; longitude: number }> {
-  // Return the Top Layer (Full Wedge) for 2D footprint requests
+  // Return the floor layer (ground footprint) for 2D requests
   const layers = calculateViewingCone3D(camera, 2);
-  // With descending order, the top layer is now index 0
-  return layers[0]?.vertices || [];
+  // Last layer is closest to the floor
+  return layers.length > 0 ? layers[layers.length - 1]?.vertices || [] : [];
 }
 
-// ... (Keep imports and calculateViewingCone3D unchanged) ...
-
 /**
- * Finds the closest wall to snap to
- * UPDATED: 
- * 1. Latitude Correction & Grid Snapping (from previous step).
- * 2. WALL OFFSET: Pushes the camera 0.2m (20cm) off the wall centerline 
- * so it appears attached to the surface, not inside it.
+ * Finds the closest wall to snap to.
+ * Includes latitude correction, grid snapping, and 20cm wall offset.
  */
 export function findClosestWall(
   lat: number,
@@ -285,12 +361,10 @@ export function findClosestWall(
         const dot = n1x * toCentroidX + n1y * toCentroidY;
         const bestAngleRad = dot > 0 ? norm1 : norm2;
         
-        // --- NEW: Calculate Offset Position ---
-        // We move the point along the 'bestAngleRad' (Inward Normal)
-        const pushX = Math.cos(bestAngleRad); // Longitude component (scaled)
-        const pushY = Math.sin(bestAngleRad); // Latitude component
+        // Calculate Offset Position (push camera off wall surface)
+        const pushX = Math.cos(bestAngleRad);
+        const pushY = Math.sin(bestAngleRad);
         
-        // Convert meters to degrees
         const offsetLat = (pushY * WALL_OFFSET_METERS) / METERS_PER_DEG;
         const offsetLng = (pushX * WALL_OFFSET_METERS) / (METERS_PER_DEG * scaleX);
         
@@ -305,7 +379,7 @@ export function findClosestWall(
         if (isNaN(bearing)) bearing = 0;
 
         bestResult = {
-          closestPoint: [finalX, finalY] as [number, number], // Return offset point
+          closestPoint: [finalX, finalY] as [number, number],
           distance: dist,
           rotation: bearing,
           inwardRotation: bearing
@@ -317,7 +391,6 @@ export function findClosestWall(
   return bestResult;
 }
 
-// ... (Keep pointToSegmentDistance and calculateCentroid unchanged) ...
 function pointToSegmentDistance(p: Point, v: Point, w: Point) {
   const l2 = (w.x - v.x)**2 + (w.y - v.y)**2;
   if (l2 === 0) return { dist: Math.hypot(p.x - v.x, p.y - v.y), closest: v };
