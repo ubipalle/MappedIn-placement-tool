@@ -1,19 +1,19 @@
 {
   "mounts": [
     {
-      "id": "wall-mount-wide",
-      "name": "Wall Mount - Wide Angle",
-      "description": "Fixed wall mount with 110° FOV. Click on a wall to place - rotation set at 45° from wall.",
+      "id": "flat-plastic",
+      "name": "Flat Plastic Mount",
+      "sku": "1504",
+      "description": "Flat wall mount. Camera faces perpendicular to the wall surface.",
       "snapsToWalls": true,
       "parameters": {
-        "fieldOfView": 84,
         "range": 20,
         "height": 2.5,
         "tilt": 0,
-        "rotation": 45
+        "rotation": 0
       },
       "locked": {
-        "fieldOfView": true,
+        "fieldOfView": false,
         "range": false,
         "height": false,
         "tilt": true,
@@ -21,21 +21,21 @@
       }
     },
     {
-      "id": "wall-mount-narrow",
-      "name": "Wall Mount - Narrow",
-      "description": "Fixed wall mount with 60° FOV. Click on a wall to place - rotation set at 45° from wall.",
+      "id": "tilted-plastic",
+      "name": "Tilted Plastic Mount",
+      "sku": "1508",
+      "description": "Tilted wall mount. Camera angled downward at ~25° from the wall.",
       "snapsToWalls": true,
       "parameters": {
-        "fieldOfView": 60,
-        "range": 30,
+        "range": 20,
         "height": 2.5,
         "tilt": -25,
         "rotation": 0
       },
       "locked": {
-        "fieldOfView": true,
+        "fieldOfView": false,
         "range": false,
-        "height": true,
+        "height": false,
         "tilt": true,
         "rotation": true
       }
@@ -43,53 +43,113 @@
     {
       "id": "ceiling-mount",
       "name": "Ceiling Mount",
-      "description": "Ceiling-mounted dome camera. Click anywhere to place. Rotation and tilt adjustable.",
+      "sku": "1503",
+      "description": "Ceiling-mounted bracket. Camera points straight down. Rotation adjustable.",
       "snapsToWalls": false,
       "parameters": {
-        "fieldOfView": 90,
         "range": 15,
         "height": 3.0,
-        "tilt": -60,
+        "tilt": -90,
         "rotation": 0
       },
       "locked": {
-        "fieldOfView": true,
+        "fieldOfView": false,
         "range": false,
         "height": true,
+        "tilt": true,
+        "rotation": false
+      }
+    },
+    {
+      "id": "flexible-metal",
+      "name": "Flexible Metal Mount",
+      "sku": "1509",
+      "description": "Flexible metal arm mount. Adjustable tilt and rotation.",
+      "snapsToWalls": true,
+      "parameters": {
+        "range": 20,
+        "height": 2.5,
+        "tilt": -15,
+        "rotation": 0
+      },
+      "locked": {
+        "fieldOfView": false,
+        "range": false,
+        "height": false,
         "tilt": false,
         "rotation": false
       }
     },
     {
-      "id": "corner-mount",
-      "name": "Corner Mount",
-      "description": "Corner bracket mount. Click on a wall to place - rotation set at 45° from wall.",
+      "id": "45-degree-left",
+      "name": "45° Mount with Tilt — Left",
+      "sku": "1511",
+      "description": "Wall mount angled 45° to the left of the wall normal.",
       "snapsToWalls": true,
       "parameters": {
-        "fieldOfView": 120,
-        "range": 18,
-        "height": 2.8,
-        "tilt": -35,
-        "rotation": 45
+        "range": 20,
+        "height": 2.5,
+        "tilt": -15,
+        "rotation": -45
       },
       "locked": {
-        "fieldOfView": true,
+        "fieldOfView": false,
         "range": false,
-        "height": true,
-        "tilt": false,
+        "height": false,
+        "tilt": true,
         "rotation": true
       }
     },
     {
-      "id": "ptz-mount",
-      "name": "PTZ Mount",
-      "description": "Pan-Tilt-Zoom mount. Click anywhere to place. All parameters adjustable except height.",
+      "id": "45-degree-right",
+      "name": "45° Mount with Tilt — Right",
+      "sku": "1512",
+      "description": "Wall mount angled 45° to the right of the wall normal.",
+      "snapsToWalls": true,
+      "parameters": {
+        "range": 20,
+        "height": 2.5,
+        "tilt": -15,
+        "rotation": 45
+      },
+      "locked": {
+        "fieldOfView": false,
+        "range": false,
+        "height": false,
+        "tilt": true,
+        "rotation": true
+      }
+    },
+    {
+      "id": "vertical-ceiling-6",
+      "name": "Vertical Ceiling Mount — 6°",
+      "sku": "1510",
+      "description": "Ceiling mount with 6° offset angle. Rotation adjustable.",
       "snapsToWalls": false,
       "parameters": {
-        "fieldOfView": 70,
-        "range": 40,
-        "height": 3.5,
-        "tilt": -20,
+        "range": 15,
+        "height": 3.0,
+        "tilt": -84,
+        "rotation": 0
+      },
+      "locked": {
+        "fieldOfView": false,
+        "range": false,
+        "height": true,
+        "tilt": true,
+        "rotation": false
+      }
+    },
+    {
+      "id": "triple-sensor",
+      "name": "Triple-Sensor Mount",
+      "sku": "1507",
+      "description": "Mount for 3 sensors in a cluster. Ceiling-mounted.",
+      "snapsToWalls": false,
+      "parameters": {
+        "range": 15,
+        "height": 3.0,
+        "tilt": -60,
         "rotation": 0
       },
       "locked": {
@@ -99,26 +159,24 @@
         "tilt": false,
         "rotation": false
       }
-    },
-    {
-      "id": "fixed-mount",
-      "name": "Fixed Mount (Test)",
-      "description": "All parameters are locked - for testing only.",
-      "snapsToWalls": false,
-      "parameters": {
-        "fieldOfView": 90,
-        "range": 25,
-        "height": 2.5,
-        "tilt": -30,
-        "rotation": 0
-      },
-      "locked": {
-        "fieldOfView": true,
-        "range": true,
-        "height": true,
-        "tilt": true,
-        "rotation": true
-      }
     }
+  ],
+  "models": {
+    "UC2W": {
+      "name": "UC2W — Wide Angle",
+      "defaultFOV": 84,
+      "description": "Wide-angle sensor, 84° horizontal FOV"
+    },
+    "UC2N": {
+      "name": "UC2N — Narrow",
+      "defaultFOV": 60,
+      "description": "Narrow sensor, 60° horizontal FOV"
+    }
+  },
+  "powerSources": [
+    { "id": "poe-airtame", "name": "PoE — Airtame adapter", "sku": "1303" },
+    { "id": "poe-upa1", "name": "PoE — UPA-1 adapter", "sku": "1305" },
+    { "id": "power-supply", "name": "Power supply (USB)", "sku": "1304" },
+    { "id": "power-supply-usbc", "name": "Power supply (USB-C)", "sku": "1320" }
   ]
 }
