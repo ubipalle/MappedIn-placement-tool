@@ -56,6 +56,39 @@ function detectRoom(lat: number, lng: number, mapData: any): string | undefined 
 }
 
 /**
+ * Get ceiling height for a coordinate from MappedIn space data.
+ * Falls back to floor height, then default 3.0m.
+ */
+function getCeilingHeight(lat: number, lng: number, mapData: any): number | null {
+  if (!mapData) return null;
+  const spaces = mapData.getByType ? mapData.getByType('space') : [];
+  if (!spaces) return null;
+
+  for (const space of spaces) {
+    const geoJSON = space.geoJSON;
+    if (!geoJSON?.geometry?.coordinates) continue;
+
+    const polygons = geoJSON.geometry.type === 'MultiPolygon'
+      ? geoJSON.geometry.coordinates
+      : [geoJSON.geometry.coordinates];
+
+    for (const ring of polygons) {
+      const coords = ring[0];
+      if (coords && pointInPolygon(lat, lng, coords)) {
+        // Try space height properties (MappedIn SDK)
+        if (typeof space.height === 'number' && space.height > 0) return space.height;
+        if (space.properties?.height) return parseFloat(space.properties.height);
+        if (geoJSON.properties?.height) return parseFloat(geoJSON.properties.height);
+        // Try floor-level height
+        if (space.floor?.height) return space.floor.height;
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * Ray casting point-in-polygon test.
  * coords is array of [lng, lat] pairs (GeoJSON order).
  */
@@ -149,8 +182,7 @@ function MapContent({
             color: color,
             opacity: baseOpacity * (0.3 + 0.7 * heightRatio),
             altitude: nextHeight,
-            height: layerThickness,
-            interactive: false
+            height: layerThickness
           });
           if (shape) shapesRef.current.push(shape);
         });
@@ -178,8 +210,7 @@ function MapContent({
           color: isSelected ? '#dc2626' : '#ef4444',
           opacity: 1.0,
           altitude: camera.height - 0.05,
-          height: 0.1, 
-          interactive: false
+          height: 0.1
         });
         if (marker) shapesRef.current.push(marker);
 
@@ -223,8 +254,7 @@ function MapContent({
             color: '#f97316', // Orange
             opacity: 0.8,
             altitude: 2.5,
-            height: 0.5,
-            interactive: false
+            height: 0.5
          });
        } catch(e) {}
     }
@@ -291,10 +321,12 @@ export default function MapView({
       spaces.forEach((space: any) => {
         const geoJSON = space.geoJSON;
         if (geoJSON?.geometry?.coordinates) {
+          // Try to get actual height from space data
+          const spaceHeight = space.height || space.properties?.height || geoJSON.properties?.height || 3.0;
           const polygons = geoJSON.geometry.type === 'MultiPolygon' ? geoJSON.geometry.coordinates : [geoJSON.geometry.coordinates];
           polygons.forEach((ring: any[]) => {
             const coords = ring[0];
-            if (coords && coords.length > 2) parsedWalls.push({ coords, height: 3.0 });
+            if (coords && coords.length > 2) parsedWalls.push({ coords, height: parseFloat(spaceHeight) || 3.0 });
           });
         }
       });
@@ -327,11 +359,22 @@ export default function MapView({
         }
     }
 
-    // FOV comes from the camera model, not the mount
+    // FOV and internal tilt come from the camera model
     const modelFOV = models[selectedModel]?.defaultFOV || defaultFOV;
+    const modelVerticalFOV = models[selectedModel]?.verticalFOV || 44;
+    const internalTilt = models[selectedModel]?.internalTilt ?? 0;
 
     // Detect room from map data
     const room = detectRoom(finalLat, finalLng, mapData);
+
+    // Determine height: ceiling mounts use ceiling height from the map
+    let cameraHeight = mount.parameters.height ?? defaultHeight;
+    if (mount.useCeilingHeight) {
+      const ceilingH = getCeilingHeight(finalLat, finalLng, mapData);
+      if (ceilingH !== null) {
+        cameraHeight = ceilingH;
+      }
+    }
 
     const newCamera: Camera = {
         id: generateCameraId(),
@@ -342,9 +385,11 @@ export default function MapView({
         longitude: finalLng,
         rotation: finalRotation,
         fieldOfView: modelFOV,
-        range: mount.parameters.range || defaultRange,
-        height: mount.parameters.height || defaultHeight,
-        tilt: mount.parameters.tilt || defaultTilt,
+        verticalFOV: modelVerticalFOV,
+        range: mount.parameters.range ?? defaultRange,
+        height: cameraHeight,
+        tilt: mount.parameters.tilt ?? defaultTilt,
+        internalTilt,
         name: `${selectedModel} ${cameras.length + 1}`,
         floorId: currentMapView?.currentFloor?.id,
         room,
@@ -484,9 +529,41 @@ export default function MapView({
     setCameras(prev => prev.map(c => {
       if (c.id !== id) return c;
       const updated = { ...c, ...updates };
-      // If model changed, update FOV to match
+      // If model changed, update FOV, verticalFOV, and internalTilt to match
       if (updates.model && models[updates.model]) {
         updated.fieldOfView = models[updates.model].defaultFOV;
+        updated.verticalFOV = models[updates.model].verticalFOV;
+        updated.internalTilt = models[updates.model].internalTilt;
+      }
+      // If mount type changed, reset locked parameters to mount defaults
+      if (updates.mountType) {
+        const newMount = mounts.find(m => m.id === updates.mountType);
+        const oldMount = mounts.find(m => m.id === c.mountType);
+        if (newMount) {
+          const locked = newMount.locked;
+          if (locked.tilt) updated.tilt = newMount.parameters.tilt;
+          if (locked.height) {
+            if (newMount.useCeilingHeight) {
+              const ceilingH = getCeilingHeight(c.latitude, c.longitude, mapData);
+              updated.height = ceilingH ?? newMount.parameters.height;
+            } else {
+              updated.height = newMount.parameters.height;
+            }
+          }
+          if (locked.rotation) {
+            // For wall-snap mounts, rotation is wall normal + mount offset.
+            // When switching between wall mounts, adjust for the offset difference
+            // rather than resetting to the raw mount offset.
+            if (newMount.snapsToWalls && oldMount?.snapsToWalls) {
+              const oldOffset = oldMount.parameters.rotation || 0;
+              const newOffset = newMount.parameters.rotation || 0;
+              updated.rotation = ((c.rotation - oldOffset + newOffset) + 360) % 360;
+            } else {
+              updated.rotation = newMount.parameters.rotation;
+            }
+          }
+          if (locked.range) updated.range = newMount.parameters.range;
+        }
       }
       return updated;
     }));
@@ -529,6 +606,8 @@ export default function MapView({
           ...cam,
           model: cam.model || 'UC2W',
           powerSource: cam.powerSource || 'poe-upa1',
+          internalTilt: cam.internalTilt ?? (cam.model === 'UC2N' ? -15 : -22),
+          verticalFOV: cam.verticalFOV ?? (cam.model === 'UC2N' ? 35 : 44),
           room: cam.room || undefined,
         }));
         setCameras(normalized);
@@ -690,11 +769,67 @@ export default function MapView({
                      </div>
                    )}
 
-                   <div><label className="block text-sm font-medium">Height ({selectedCameraData.height.toFixed(1)}m)</label><input type="range" min="0.5" max="10" step="0.1" value={selectedCameraData.height} onChange={e => handleUpdateCamera(selectedCameraData.id, { height: parseFloat(e.target.value) })} className="w-full" /></div>
-                   <div><label className="block text-sm font-medium">Tilt ({selectedCameraData.tilt}°)</label><input type="range" min="-90" max="30" value={selectedCameraData.tilt} onChange={e => handleUpdateCamera(selectedCameraData.id, { tilt: parseInt(e.target.value) })} className="w-full" /></div>
-                   <div><label className="block text-sm font-medium">FOV ({selectedCameraData.fieldOfView}°)</label><input type="range" min="30" max="180" value={selectedCameraData.fieldOfView} onChange={e => handleUpdateCamera(selectedCameraData.id, { fieldOfView: parseInt(e.target.value) })} className="w-full" /></div>
-                   <div><label className="block text-sm font-medium">Range ({selectedCameraData.range}m)</label><input type="range" min="5" max="50" value={selectedCameraData.range} onChange={e => handleUpdateCamera(selectedCameraData.id, { range: parseInt(e.target.value) })} className="w-full" /></div>
-                   <div><label className="block text-sm font-medium">Rotation ({selectedCameraData.rotation}°)</label><input type="range" min="0" max="360" value={selectedCameraData.rotation} onChange={e => handleUpdateCamera(selectedCameraData.id, { rotation: parseInt(e.target.value) })} className="w-full" /></div>
+                   {(() => {
+                     const mount = mounts.find(m => m.id === selectedCameraData.mountType);
+                     const locked = mount?.locked || {};
+                     const isLocked = (param: string) => !!(locked as any)[param];
+
+                     return (<>
+                       {/* Height */}
+                       <div>
+                         <label className="block text-sm font-medium">
+                           Height ({selectedCameraData.height.toFixed(1)}m)
+                           {isLocked('height') && <span className="ml-1 text-xs text-gray-400">🔒 {mount?.useCeilingHeight ? 'ceiling' : 'locked'}</span>}
+                         </label>
+                         <input type="range" min="0.5" max="10" step="0.1" value={selectedCameraData.height}
+                           onChange={e => handleUpdateCamera(selectedCameraData.id, { height: parseFloat(e.target.value) })}
+                           disabled={isLocked('height')}
+                           className={`w-full ${isLocked('height') ? 'opacity-40' : ''}`} />
+                       </div>
+
+                       {/* Tilt */}
+                       <div>
+                         <label className="block text-sm font-medium">
+                           Tilt — mount: {selectedCameraData.tilt}° · effective: {selectedCameraData.tilt + selectedCameraData.internalTilt}°
+                           {isLocked('tilt') && <span className="ml-1 text-xs text-gray-400">🔒</span>}
+                         </label>
+                         <input type="range" min="-90" max="30" value={selectedCameraData.tilt}
+                           onChange={e => handleUpdateCamera(selectedCameraData.id, { tilt: parseInt(e.target.value) })}
+                           disabled={isLocked('tilt')}
+                           className={`w-full ${isLocked('tilt') ? 'opacity-40' : ''}`} />
+                       </div>
+
+                       {/* FOV (fixed by model, display only) */}
+                       <div>
+                         <label className="block text-sm font-medium">FOV</label>
+                         <div className="text-sm text-gray-600 px-2 py-1 bg-gray-50 rounded">{selectedCameraData.fieldOfView}° H · {selectedCameraData.verticalFOV}° V</div>
+                       </div>
+
+                       {/* Range */}
+                       <div>
+                         <label className="block text-sm font-medium">
+                           Range ({selectedCameraData.range}m)
+                           {isLocked('range') && <span className="ml-1 text-xs text-gray-400">🔒</span>}
+                         </label>
+                         <input type="range" min="5" max="50" value={selectedCameraData.range}
+                           onChange={e => handleUpdateCamera(selectedCameraData.id, { range: parseInt(e.target.value) })}
+                           disabled={isLocked('range')}
+                           className={`w-full ${isLocked('range') ? 'opacity-40' : ''}`} />
+                       </div>
+
+                       {/* Rotation */}
+                       <div>
+                         <label className="block text-sm font-medium">
+                           Rotation ({selectedCameraData.rotation}°)
+                           {isLocked('rotation') && <span className="ml-1 text-xs text-gray-400">🔒</span>}
+                         </label>
+                         <input type="range" min="0" max="360" value={selectedCameraData.rotation}
+                           onChange={e => handleUpdateCamera(selectedCameraData.id, { rotation: parseInt(e.target.value) })}
+                           disabled={isLocked('rotation')}
+                           className={`w-full ${isLocked('rotation') ? 'opacity-40' : ''}`} />
+                       </div>
+                     </>);
+                   })()}
                    <button onClick={handleDeleteCamera} className="w-full px-4 py-2 bg-red-600 text-white rounded">Delete</button>
                 </div>
              </div>

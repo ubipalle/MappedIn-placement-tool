@@ -13,9 +13,8 @@ interface Segment {
 }
 
 // --- Constants ---
-// Assumed Vertical Field of View (Total). 
-const VERTICAL_FOV_DEG = 60;
-const VERTICAL_HALF_ANGLE = (VERTICAL_FOV_DEG / 2) * (Math.PI / 180);
+// Default Vertical FOV if not specified on camera
+const DEFAULT_VERTICAL_FOV_DEG = 44;
 
 /**
  * Extract wall segments from MapData
@@ -83,11 +82,12 @@ function getWallSegments(mapData: any): Segment[] {
 function getVerticalFOVRadii(
   deltaZ: number,
   tiltDeg: number,
-  range: number
+  range: number,
+  verticalFOVDeg: number
 ): { innerRadius: number; outerRadius: number } {
   // Depression angle (positive = looking down)
   const alpha = (-tiltDeg) * Math.PI / 180;
-  const halfVFOV = VERTICAL_HALF_ANGLE;
+  const halfVFOV = (verticalFOVDeg / 2) * Math.PI / 180;
 
   // Near edge: lower edge of vertical FOV (more vertical / closer to camera on floor)
   const nearAngle = alpha + halfVFOV;
@@ -175,7 +175,10 @@ export function calculateViewingCone3D(
 
   // 3. Generate 3D Layers with tilt-aware inner/outer radii
   const layers: Array<{ height: number; vertices: Array<{ latitude: number; longitude: number }> }> = [];
-  const tilt = (typeof camera.tilt === 'number' && !isNaN(camera.tilt)) ? camera.tilt : -30;
+  const tilt = (typeof camera.tilt === 'number' && !isNaN(camera.tilt)) ? camera.tilt : 0;
+  const internalTilt = (typeof camera.internalTilt === 'number' && !isNaN(camera.internalTilt)) ? camera.internalTilt : 0;
+  const effectiveTilt = tilt + internalTilt; // Mount tilt + sensor internal tilt
+  const verticalFOV = (typeof camera.verticalFOV === 'number' && camera.verticalFOV > 0) ? camera.verticalFOV : DEFAULT_VERTICAL_FOV_DEG;
 
   // Loop Descending: Start from Camera Height (t=1), go down to Floor (t=0)
   for (let i = numLayers - 1; i >= 0; i--) {
@@ -187,7 +190,7 @@ export function calculateViewingCone3D(
     if (deltaZ < 0.001) continue;
 
     // Calculate tilt-aware inner and outer radii for this height layer
-    const { innerRadius, outerRadius } = getVerticalFOVRadii(deltaZ, tilt, camera.range);
+    const { innerRadius, outerRadius } = getVerticalFOVRadii(deltaZ, effectiveTilt, camera.range, verticalFOV);
 
     // Skip if no visible area at this height
     if (innerRadius >= outerRadius) continue;

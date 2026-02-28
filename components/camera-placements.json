@@ -10,9 +10,11 @@
       "longitude": -3.175117525153203,
       "rotation": 0,
       "fieldOfView": 84,
+      "verticalFOV": 44,
       "range": 10,
       "height": 2.5,
       "tilt": -30,
+      "internalTilt": -22,
       "name": "UC2W 1",
       "floorId": "m_52a66c6ededae604",
       "room": "Lobby"

@@ -4,6 +4,7 @@ export interface MountType {
   sku: string;
   description: string;
   snapsToWalls: boolean;
+  useCeilingHeight: boolean;
   parameters: {
     range: number;
     height: number;
@@ -22,6 +23,8 @@ export interface MountType {
 export interface CameraModel {
   name: string;
   defaultFOV: number;
+  verticalFOV: number;
+  internalTilt: number;
   description: string;
 }
 

@@ -6,10 +6,12 @@ export interface Camera {
   latitude: number;
   longitude: number;
   rotation: number; // Degrees from north (0-360)
-  fieldOfView: number; // Degrees
+  fieldOfView: number; // Degrees (horizontal)
+  verticalFOV: number; // Degrees (vertical, model-specific)
   range: number; // Meters
   height: number; // Height above floor in meters
-  tilt: number; // Vertical tilt angle in degrees (0 = horizontal, -90 = straight down)
+  tilt: number; // Mount tilt angle in degrees (0 = horizontal, negative = downward)
+  internalTilt: number; // Sensor's built-in tilt offset (e.g. -22 for UC2W)
   name: string;
   floorId?: string;
   room?: string; // Room/space name from MappedIn

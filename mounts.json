@@ -6,6 +6,7 @@
       "sku": "1504",
       "description": "Flat wall mount. Camera faces perpendicular to the wall surface.",
       "snapsToWalls": true,
+      "useCeilingHeight": false,
       "parameters": {
         "range": 20,
         "height": 2.5,
@@ -24,12 +25,13 @@
       "id": "tilted-plastic",
       "name": "Tilted Plastic Mount",
       "sku": "1508",
-      "description": "Tilted wall mount. Camera angled downward at ~25° from the wall.",
+      "description": "Tilted wall mount. Camera angled 8° downward from the wall.",
       "snapsToWalls": true,
+      "useCeilingHeight": false,
       "parameters": {
         "range": 20,
         "height": 2.5,
-        "tilt": -25,
+        "tilt": -8,
         "rotation": 0
       },
       "locked": {
@@ -44,8 +46,9 @@
       "id": "ceiling-mount",
       "name": "Ceiling Mount",
       "sku": "1503",
-      "description": "Ceiling-mounted bracket. Camera points straight down. Rotation adjustable.",
+      "description": "Ceiling-mounted bracket. Camera points straight down. Height set to ceiling.",
       "snapsToWalls": false,
+      "useCeilingHeight": true,
       "parameters": {
         "range": 15,
         "height": 3.0,
@@ -66,6 +69,7 @@
       "sku": "1509",
       "description": "Flexible metal arm mount. Adjustable tilt and rotation.",
       "snapsToWalls": true,
+      "useCeilingHeight": false,
       "parameters": {
         "range": 20,
         "height": 2.5,
@@ -86,10 +90,11 @@
       "sku": "1511",
       "description": "Wall mount angled 45° to the left of the wall normal.",
       "snapsToWalls": true,
+      "useCeilingHeight": false,
       "parameters": {
         "range": 20,
         "height": 2.5,
-        "tilt": -15,
+        "tilt": -7,
         "rotation": -45
       },
       "locked": {
@@ -106,10 +111,11 @@
       "sku": "1512",
       "description": "Wall mount angled 45° to the right of the wall normal.",
       "snapsToWalls": true,
+      "useCeilingHeight": false,
       "parameters": {
         "range": 20,
         "height": 2.5,
-        "tilt": -15,
+        "tilt": -7,
         "rotation": 45
       },
       "locked": {
@@ -124,12 +130,13 @@
       "id": "vertical-ceiling-6",
       "name": "Vertical Ceiling Mount — 6°",
       "sku": "1510",
-      "description": "Ceiling mount with 6° offset angle. Rotation adjustable.",
+      "description": "Ceiling mount with 6° downward tilt. Height set to ceiling.",
       "snapsToWalls": false,
+      "useCeilingHeight": true,
       "parameters": {
         "range": 15,
         "height": 3.0,
-        "tilt": -84,
+        "tilt": -6,
         "rotation": 0
       },
       "locked": {
@@ -139,38 +146,22 @@
         "tilt": true,
         "rotation": false
       }
-    },
-    {
-      "id": "triple-sensor",
-      "name": "Triple-Sensor Mount",
-      "sku": "1507",
-      "description": "Mount for 3 sensors in a cluster. Ceiling-mounted.",
-      "snapsToWalls": false,
-      "parameters": {
-        "range": 15,
-        "height": 3.0,
-        "tilt": -60,
-        "rotation": 0
-      },
-      "locked": {
-        "fieldOfView": false,
-        "range": false,
-        "height": true,
-        "tilt": false,
-        "rotation": false
-      }
     }
   ],
   "models": {
     "UC2W": {
       "name": "UC2W — Wide Angle",
       "defaultFOV": 84,
-      "description": "Wide-angle sensor, 84° horizontal FOV"
+      "verticalFOV": 44,
+      "internalTilt": -22,
+      "description": "Wide-angle sensor, 84° horizontal FOV, 44° vertical FOV, 22° internal downward tilt"
     },
     "UC2N": {
       "name": "UC2N — Narrow",
       "defaultFOV": 60,
-      "description": "Narrow sensor, 60° horizontal FOV"
+      "verticalFOV": 35,
+      "internalTilt": -15,
+      "description": "Narrow sensor, 60° horizontal FOV, 35° vertical FOV, 15° internal downward tilt"
     }
   },
   "powerSources": [
