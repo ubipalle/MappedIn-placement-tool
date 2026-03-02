@@ -113,6 +113,7 @@ function MapContent({
   dragGhost,
   placementMode,
   onPlaceCamera,
+  onHoverCoord,
 }: {
   cameras: Camera[];
   selectedCamera: string | null;
@@ -121,6 +122,7 @@ function MapContent({
   dragGhost: { lat: number, lng: number } | null;
   placementMode: boolean;
   onPlaceCamera: (coord: { latitude: number, longitude: number }) => void;
+  onHoverCoord: (coord: { latitude: number, longitude: number }) => void;
 }) {
   const { mapView } = useMap();
   const shapesRef = useRef<any[]>([]);
@@ -130,6 +132,17 @@ function MapContent({
   useEffect(() => {
     if (mapView) onMapViewReady(mapView);
   }, [mapView, onMapViewReady]);
+
+  // 1b. Track hover coordinate from SDK (accurate map coordinates)
+  useEffect(() => {
+    if (!mapView) return;
+    const onHover = (e: any) => {
+      const coord = e.coordinate || e.latLng;
+      if (coord) onHoverCoord(coord);
+    };
+    mapView.on('hover', onHover);
+    return () => { mapView.off('hover', onHover); };
+  }, [mapView, onHoverCoord]);
 
   // 2. Handle CLICK for Placement (Uses SDK Event for precision)
   useEffect(() => {
@@ -295,6 +308,7 @@ export default function MapView({
   
   // Drag State
   const [dragGhost, setDragGhost] = useState<{ lat: number, lng: number } | null>(null);
+  const dragGhostRef = useRef<{ lat: number, lng: number } | null>(null);
   const [cursorStyle, setCursorStyle] = useState<'default' | 'crosshair' | 'grab' | 'grabbing'>('default');
   
   // Refs
@@ -303,6 +317,49 @@ export default function MapView({
   const dragWallRef = useRef<{ coords: Array<[number, number]>, height: number } | null>(null);
   const wallsRef = useRef<Array<{ coords: Array<[number, number]>, height: number }>>([]);
   const lastThrottleTime = useRef<number>(0);
+  const hoverCoordRef = useRef<{ latitude: number, longitude: number } | null>(null);
+  const dragStartScreenRef = useRef<{ x: number, y: number } | null>(null);
+  const dragStartLatLngRef = useRef<{ lat: number, lng: number } | null>(null);
+
+  // Callback for SDK hover events — updates the latest map coordinate (only fires when mouse is NOT held)
+  const handleHoverCoord = useCallback((coord: { latitude: number, longitude: number }) => {
+    hoverCoordRef.current = coord;
+
+    // Cursor feedback: show grab cursor when hovering near a camera
+    if (!isDraggingRef.current && !placementMode) {
+      const nearCamera = cameras.some(c => {
+        const dist = getDistanceMeters(c.latitude, c.longitude, coord.latitude, coord.longitude);
+        return dist < 2.5;
+      });
+      setCursorStyle(nearCamera ? 'grab' : 'default');
+    }
+  }, [cameras, placementMode]);
+
+  /**
+   * Convert screen pixel delta to lat/lng delta using the map's current zoom and bearing.
+   * Uses standard Web Mercator math: metersPerPixel = 156543.03 * cos(lat) / 2^zoom
+   */
+  const screenDeltaToLatLng = useCallback((dx: number, dy: number, startLat: number, startLng: number) => {
+    // Get map camera state
+    const cam = currentMapView?.Camera;
+    const zoom = cam?.zoom ?? cam?.zoomLevel ?? 18;
+    const bearingDeg = cam?.bearing ?? cam?.rotation ?? 0;
+    const bearingRad = bearingDeg * Math.PI / 180;
+
+    const latRad = startLat * Math.PI / 180;
+    const metersPerPixel = 156543.03392 * Math.cos(latRad) / Math.pow(2, zoom);
+
+    const degLatPerPx = metersPerPixel / 111320;
+    const degLngPerPx = metersPerPixel / (111320 * Math.cos(latRad));
+
+    // Rotate screen delta by bearing:
+    // Screen down (+dy) at bearing 0 = South (-lat)
+    // Screen right (+dx) at bearing 0 = East (+lng)
+    const newLat = startLat + (-dy * Math.cos(bearingRad) - dx * Math.sin(bearingRad)) * degLatPerPx;
+    const newLng = startLng + (dx * Math.cos(bearingRad) - dy * Math.sin(bearingRad)) * degLngPerPx;
+
+    return { lat: newLat, lng: newLng };
+  }, [currentMapView]);
 
   // Load Mounts
   useEffect(() => {
@@ -405,11 +462,7 @@ export default function MapView({
   const handleMouseDownCapture = (e: React.MouseEvent) => {
     if (placementMode || !currentMapView) return;
 
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    
-    const coord = currentMapView.createCoordinate(x, y);
+    const coord = hoverCoordRef.current;
     if (!coord) return;
 
     const clickedCamera = cameras.find(c => {
@@ -419,93 +472,115 @@ export default function MapView({
 
     if (clickedCamera) {
         e.stopPropagation(); 
+        e.preventDefault(); // Prevent SDK from starting a pan
         
-        console.log("GRIPPED:", clickedCamera.name);
         setSelectedCamera(clickedCamera.id);
         setCursorStyle('grabbing');
 
-        let bestWall = null;
-        let bestDist = Infinity;
-        wallsRef.current.forEach(wall => {
-            const snap = findClosestWall(clickedCamera.latitude, clickedCamera.longitude, [wall]);
-            if (snap && snap.distance < bestDist) {
-                bestDist = snap.distance;
-                bestWall = wall;
-            }
-        });
+        // Store drag start positions for pixel-delta tracking
+        dragStartScreenRef.current = { x: e.clientX, y: e.clientY };
+        dragStartLatLngRef.current = { lat: clickedCamera.latitude, lng: clickedCamera.longitude };
 
-        if (bestWall) {
+        const mount = mounts.find(m => m.id === clickedCamera.mountType);
+
+        if (mount?.snapsToWalls) {
+            // Wall-mounted: find the wall it's on and constrain drag to it
+            let bestWall = null;
+            let bestDist = Infinity;
+            wallsRef.current.forEach(wall => {
+                const snap = findClosestWall(clickedCamera.latitude, clickedCamera.longitude, [wall]);
+                if (snap && snap.distance < bestDist) {
+                    bestDist = snap.distance;
+                    bestWall = wall;
+                }
+            });
+
+            if (bestWall) {
+                isDraggingRef.current = true;
+                dragCameraIdRef.current = clickedCamera.id;
+                dragWallRef.current = bestWall;
+            }
+        } else {
+            // Ceiling-mounted or free: drag freely (no wall constraint)
             isDraggingRef.current = true;
             dragCameraIdRef.current = clickedCamera.id;
-            dragWallRef.current = bestWall;
+            dragWallRef.current = null;
         }
     }
   };
 
-  // 3. Mouse Move (Drag & Cursor Feedback)
+  // 3. Mouse Move (Compute drag ghost from pixel delta)
   const handleMouseMove = (e: React.MouseEvent) => {
-    // A. Cursor Feedback (Hover)
-    if (!isDraggingRef.current && !placementMode && currentMapView) {
-        const rect = e.currentTarget.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        const coord = currentMapView.createCoordinate(x, y);
-        
-        if (coord) {
-            const hoveringCamera = cameras.some(c => {
-                const dist = getDistanceMeters(c.latitude, c.longitude, coord.latitude, coord.longitude);
-                return dist < 2.5;
-            });
-            setCursorStyle(hoveringCamera ? 'grab' : 'default');
-        }
-    }
+    if (!isDraggingRef.current || !dragStartScreenRef.current || !dragStartLatLngRef.current) return;
 
-    // B. Dragging Logic
-    if (isDraggingRef.current && dragWallRef.current && currentMapView) {
-        e.stopPropagation();
-        e.preventDefault();
+    e.stopPropagation();
+    e.preventDefault();
 
-        const now = Date.now();
-        if (now - lastThrottleTime.current < 20) return;
-        lastThrottleTime.current = now;
+    const now = Date.now();
+    if (now - lastThrottleTime.current < 20) return;
+    lastThrottleTime.current = now;
 
-        const rect = e.currentTarget.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        const coord = currentMapView.createCoordinate(x, y);
-        if (!coord) return;
+    const dx = e.clientX - dragStartScreenRef.current.x;
+    const dy = e.clientY - dragStartScreenRef.current.y;
+    const raw = screenDeltaToLatLng(dx, dy, dragStartLatLngRef.current.lat, dragStartLatLngRef.current.lng);
 
-        const wallSnap = findClosestWall(coord.latitude, coord.longitude, [dragWallRef.current]);
-        if (wallSnap) {
-            setDragGhost({ lat: wallSnap.closestPoint[1], lng: wallSnap.closestPoint[0] });
-        }
+    if (dragWallRef.current) {
+      // Wall-mounted: snap the raw position to the wall
+      const wallSnap = findClosestWall(raw.lat, raw.lng, [dragWallRef.current]);
+      if (wallSnap) {
+        const pos = { lat: wallSnap.closestPoint[1], lng: wallSnap.closestPoint[0] };
+        dragGhostRef.current = pos;
+        setDragGhost(pos);
+      }
+    } else {
+      // Ceiling/free: follow cursor directly
+      const pos = { lat: raw.lat, lng: raw.lng };
+      dragGhostRef.current = pos;
+      setDragGhost(pos);
     }
   };
 
   // 4. Mouse Up (Drop)
   const handleMouseUp = (e: React.MouseEvent) => {
-    if (isDraggingRef.current && dragCameraIdRef.current && dragWallRef.current && currentMapView) {
+    const ghost = dragGhostRef.current;
+    if (isDraggingRef.current && dragCameraIdRef.current && ghost) {
         e.stopPropagation();
 
-        if (dragGhost) {
-            const wallSnap = findClosestWall(dragGhost.lat, dragGhost.lng, [dragWallRef.current]);
+        const camId = dragCameraIdRef.current; // capture before reset
+        const cam = cameras.find(c => c.id === camId);
+        const mnt = mounts.find(m => m.id === cam?.mountType);
+
+        if (dragWallRef.current) {
+            // Wall-mounted: snap to wall and recalculate rotation
+            const wallSnap = findClosestWall(ghost.lat, ghost.lng, [dragWallRef.current]);
             if (wallSnap) {
                 const wallNormal = wallSnap.rotation;
-                const cam = cameras.find(c => c.id === dragCameraIdRef.current);
-                const mnt = mounts.find(m => m.id === cam?.mountType);
                 const mountOffset = mnt?.parameters.rotation || 0;
                 const finalRotation = (wallNormal + mountOffset) % 360;
-
-                // Update room when camera is moved
-                const newRoom = detectRoom(dragGhost.lat, dragGhost.lng, mapData);
+                const newRoom = detectRoom(ghost.lat, ghost.lng, mapData);
 
                 setCameras(prev => prev.map(c => {
-                    if (c.id === dragCameraIdRef.current) {
-                        return { ...c, latitude: dragGhost.lat, longitude: dragGhost.lng, rotation: finalRotation, room: newRoom };
+                    if (c.id === camId) {
+                        return { ...c, latitude: ghost.lat, longitude: ghost.lng, rotation: finalRotation, room: newRoom };
                     }
                     return c;
                 }));
             }
+        } else {
+            // Ceiling/free mount: move freely, update room and ceiling height
+            const newRoom = detectRoom(ghost.lat, ghost.lng, mapData);
+            let newHeight = cam?.height;
+            if (mnt?.useCeilingHeight) {
+                const ceilingH = getCeilingHeight(ghost.lat, ghost.lng, mapData);
+                if (ceilingH !== null) newHeight = ceilingH;
+            }
+
+            setCameras(prev => prev.map(c => {
+                if (c.id === camId) {
+                    return { ...c, latitude: ghost.lat, longitude: ghost.lng, room: newRoom, height: newHeight ?? c.height };
+                }
+                return c;
+            }));
         }
     }
 
@@ -513,6 +588,9 @@ export default function MapView({
     isDraggingRef.current = false;
     dragCameraIdRef.current = null;
     dragWallRef.current = null;
+    dragStartScreenRef.current = null;
+    dragStartLatLngRef.current = null;
+    dragGhostRef.current = null;
     setDragGhost(null);
     setCursorStyle(placementMode ? 'crosshair' : 'default');
   };
@@ -629,8 +707,8 @@ export default function MapView({
        <div 
          className="flex-1 relative"
          onMouseDownCapture={handleMouseDownCapture} 
-         onMouseMove={handleMouseMove}
-         onMouseUp={handleMouseUp}
+         onMouseMoveCapture={handleMouseMove}
+         onMouseUpCapture={handleMouseUp}
          style={{ cursor: placementMode ? 'crosshair' : cursorStyle }}
        >
           {mapData && (
@@ -643,6 +721,7 @@ export default function MapView({
                   dragGhost={dragGhost}
                   placementMode={placementMode}
                   onPlaceCamera={handlePlaceCamera}
+                  onHoverCoord={handleHoverCoord}
                 />
              </MappedInMapView>
           )}
