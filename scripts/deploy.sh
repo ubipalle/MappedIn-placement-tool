@@ -45,6 +45,12 @@ echo "--- Configuring Docker auth ---"
 gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
 
 # 5. Build and push Docker image
+# NOTE: If "google-sa-key-json" secret doesn't exist yet, create it:
+#   gcloud secrets create google-sa-key-json --replication-policy="automatic"
+#   gcloud secrets versions add google-sa-key-json --data-file=path/to/sa-key.json
+#   gcloud secrets add-iam-policy-binding google-sa-key-json \
+#     --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+#     --role="roles/secretmanager.secretAccessor"
 echo "--- Building Docker image ---"
 docker build -t ${IMAGE_NAME}:latest .
 
@@ -64,7 +70,8 @@ gcloud beta run deploy ${SERVICE_NAME} \
   --max-instances=3 \
   --no-allow-unauthenticated \
   --iap \
-  --set-env-vars="MAPPEDIN_API_KEY=${MAPPEDIN_API_KEY},MAPPEDIN_API_SECRET=${MAPPEDIN_API_SECRET},MAPPEDIN_DEFAULT_MAP_ID=${MAPPEDIN_DEFAULT_MAP_ID}"
+  --set-env-vars="MAPPEDIN_API_KEY=${MAPPEDIN_API_KEY},MAPPEDIN_API_SECRET=${MAPPEDIN_API_SECRET},MAPPEDIN_DEFAULT_MAP_ID=${MAPPEDIN_DEFAULT_MAP_ID},GDRIVE_ROOT_FOLDER_ID=${GDRIVE_ROOT_FOLDER_ID}" \
+  --set-secrets="GOOGLE_SERVICE_ACCOUNT_KEY_JSON=google-sa-key-json:latest"
 
 # 7. Grant IAP service agent invoker role
 echo "--- Setting up IAP service agent ---"

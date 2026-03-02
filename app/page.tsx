@@ -12,6 +12,13 @@ const MapView = dynamic(() => import('@/components/MapView'), {
   ),
 });
 
+interface ProjectInfo {
+  projectCode: string;
+  folderName: string;
+  customerName: string | null;
+  mapId: string | null;
+}
+
 export default function Home() {
   const [credentials, setCredentials] = useState<{
     apiKey: string;
@@ -25,9 +32,14 @@ export default function Home() {
     mapId: string;
   } | null>(null);
 
+  const [projectCode, setProjectCode] = useState('');
+  const [projectInfo, setProjectInfo] = useState<ProjectInfo | null>(null);
   const [mapId, setMapId] = useState('');
+  const [mode, setMode] = useState<'project' | 'manual'>('project');
   const [loading, setLoading] = useState(true);
+  const [projectLoading, setProjectLoading] = useState(false);
   const [error, setError] = useState('');
+  const [projectError, setProjectError] = useState('');
 
   // Fetch MappedIn credentials from server-side API
   useEffect(() => {
@@ -36,9 +48,9 @@ export default function Home() {
       .then(data => {
         if (data.apiKey && data.apiSecret) {
           setServerCreds(data);
-          setMapId(data.mapId || '');
-          // Auto-load if default mapId is configured
+          // If default mapId configured, auto-load directly
           if (data.mapId) {
+            setMapId(data.mapId);
             setCredentials({
               apiKey: data.apiKey,
               apiSecret: data.apiSecret,
@@ -50,15 +62,49 @@ export default function Home() {
         }
         setLoading(false);
       })
-      .catch(err => {
+      .catch(() => {
         setError('Failed to connect to server');
         setLoading(false);
       });
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Look up project config from GDrive
+  const handleProjectLookup = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!serverCreds) return;
+    if (!serverCreds || !projectCode.trim()) return;
+
+    setProjectLoading(true);
+    setProjectError('');
+    setProjectInfo(null);
+
+    try {
+      const res = await fetch(`/api/project-config/${projectCode.trim()}`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        setProjectError(data.error || 'Failed to fetch project config');
+        setProjectLoading(false);
+        return;
+      }
+
+      setProjectInfo(data);
+
+      if (data.mapId) {
+        setMapId(data.mapId);
+      } else {
+        setProjectError('Project found but no mapId set yet. You can enter it manually below.');
+        setMode('manual');
+      }
+    } catch {
+      setProjectError('Failed to connect to server');
+    }
+
+    setProjectLoading(false);
+  };
+
+  // Load the map
+  const handleLoadMap = () => {
+    if (!serverCreds || !mapId.trim()) return;
     setCredentials({
       apiKey: serverCreds.apiKey,
       apiSecret: serverCreds.apiSecret,
@@ -66,6 +112,7 @@ export default function Home() {
     });
   };
 
+  // If map is loaded, show MapView
   if (credentials) {
     return (
       <MapView
@@ -95,28 +142,124 @@ export default function Home() {
         )}
 
         {!loading && serverCreds && (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Map ID</label>
-              <input
-                type="text"
-                value={mapId}
-                onChange={e => setMapId(e.target.value)}
-                placeholder="Enter MappedIn Map ID"
-                required
-                autoFocus
-                className="w-full px-4 py-2 border rounded-lg"
-              />
+          <>
+            {/* Mode tabs */}
+            <div className="flex border-b mb-4">
+              <button
+                onClick={() => setMode('project')}
+                className={`flex-1 pb-2 text-sm font-medium border-b-2 transition-colors ${
+                  mode === 'project'
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                Project Code
+              </button>
+              <button
+                onClick={() => setMode('manual')}
+                className={`flex-1 pb-2 text-sm font-medium border-b-2 transition-colors ${
+                  mode === 'manual'
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                Manual Map ID
+              </button>
             </div>
 
-            <button
-              type="submit"
-              disabled={!mapId.trim()}
-              className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-300"
-            >
-              Load Map
-            </button>
-          </form>
+            {mode === 'project' && (
+              <div className="space-y-4">
+                <form onSubmit={handleProjectLookup} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Project Code</label>
+                    <input
+                      type="text"
+                      value={projectCode}
+                      onChange={e => {
+                        // Allow only digits, max 5
+                        const val = e.target.value.replace(/\D/g, '').slice(0, 5);
+                        setProjectCode(val);
+                      }}
+                      placeholder="e.g. 10042"
+                      required
+                      autoFocus
+                      pattern="\d{5}"
+                      maxLength={5}
+                      className="w-full px-4 py-2 border rounded-lg font-mono text-lg tracking-wider"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={projectCode.length !== 5 || projectLoading}
+                    className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-300 transition-colors"
+                  >
+                    {projectLoading ? 'Looking up project...' : 'Look Up Project'}
+                  </button>
+                </form>
+
+                {projectError && (
+                  <div className="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-lg text-sm">
+                    {projectError}
+                  </div>
+                )}
+
+                {projectInfo && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-3">
+                    <div className="text-sm text-green-800">
+                      <span className="font-medium">Project:</span>{' '}
+                      {projectInfo.folderName}
+                    </div>
+                    {projectInfo.mapId && (
+                      <>
+                        <div className="text-sm text-green-800">
+                          <span className="font-medium">Map ID:</span>{' '}
+                          <span className="font-mono text-xs">{projectInfo.mapId}</span>
+                        </div>
+                        <button
+                          onClick={handleLoadMap}
+                          className="w-full bg-green-600 text-white py-3 rounded-lg font-medium hover:bg-green-700 transition-colors"
+                        >
+                          Load Map
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {mode === 'manual' && (
+              <form
+                onSubmit={e => {
+                  e.preventDefault();
+                  handleLoadMap();
+                }}
+                className="space-y-4"
+              >
+                <div>
+                  <label className="block text-sm font-medium mb-1">Map ID</label>
+                  <input
+                    type="text"
+                    value={mapId}
+                    onChange={e => setMapId(e.target.value)}
+                    placeholder="Enter MappedIn Map ID"
+                    required
+                    autoFocus
+                    className="w-full px-4 py-2 border rounded-lg"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={!mapId.trim()}
+                  className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-300 transition-colors"
+                >
+                  Load Map
+                </button>
+              </form>
+            )}
+          </>
         )}
 
         {!loading && !serverCreds && !error && (
