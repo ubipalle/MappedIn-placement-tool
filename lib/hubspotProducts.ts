@@ -62,6 +62,7 @@ export interface CameraModel {
   defaultFOV: number;
   verticalFOV: number;
   internalTilt: number;
+  defaultRange: number;
   description: string;
   unpriced?: boolean;
 }
@@ -112,6 +113,7 @@ interface RawModel {
   defaultFOV: number;
   verticalFOV: number;
   internalTilt: number;
+  defaultRange: number;
   description: string;
 }
 
@@ -253,6 +255,7 @@ function mergeCatalog(raw: RawMountsJson, hsProducts: HubSpotProduct[]): Product
       defaultFOV: m.defaultFOV,
       verticalFOV: m.verticalFOV,
       internalTilt: m.internalTilt,
+      defaultRange: m.defaultRange,
       description: m.description,
       unpriced: !hs,
     };

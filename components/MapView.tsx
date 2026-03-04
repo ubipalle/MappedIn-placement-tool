@@ -3,9 +3,8 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { MapView as MappedInMapView, useMapData, useMap } from '@mappedin/react-sdk';
 import { Camera } from '@/types/camera';
-import { MountType, MountConfig } from '@/types/mount';
+import { MountType } from '@/types/mount';
 import { calculateViewingCone3D, generateCameraId, findClosestWall } from '@/utils/geometry';
-import mountsConfig from '@/mounts.json';
 
 interface MapViewProps {
   apiKey: string;
@@ -300,11 +299,9 @@ export default function MapView({
   const [selectedModel, setSelectedModel] = useState<'UC2W' | 'UC2N'>('UC2W');
   const [selectedPowerSource, setSelectedPowerSource] = useState<string>('poe-upa1');
   const [mounts, setMounts] = useState<MountType[]>([]);
-  
-  // Config data
-  const config = mountsConfig as MountConfig;
-  const models = config.models;
-  const powerSources = config.powerSources;
+  const [models, setModels] = useState<Record<string, any>>({});
+  const [powerSources, setPowerSources] = useState<Array<{ id: string; name: string; sku: string; price: number | null }>>([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
   
   // Drag State
   const [dragGhost, setDragGhost] = useState<{ lat: number, lng: number } | null>(null);
@@ -361,12 +358,29 @@ export default function MapView({
     return { lat: newLat, lng: newLng };
   }, [currentMapView]);
 
-  // Load Mounts
+  // Load product catalog from HubSpot via API route
   useEffect(() => {
-    setMounts(config.mounts);
-    if (config.mounts.length > 0) {
-      setSelectedMount(config.mounts[0].id);
-    }
+    fetch('/api/products')
+      .then(res => res.json())
+      .then(catalog => {
+        const fetchedMounts: MountType[] = catalog.mounts || [];
+        setMounts(fetchedMounts);
+        if (fetchedMounts.length > 0) {
+          setSelectedMount(fetchedMounts[0].id);
+        }
+        // API returns models as array — convert to Record keyed by id
+        const modelsRecord: Record<string, any> = {};
+        for (const m of catalog.models || []) {
+          modelsRecord[m.id] = m;
+        }
+        setModels(modelsRecord);
+        setPowerSources(catalog.powerSources || []);
+        setCatalogLoading(false);
+      })
+      .catch(err => {
+        console.error('Failed to load product catalog:', err);
+        setCatalogLoading(false);
+      });
   }, []);
 
   // Parse Walls
@@ -443,7 +457,7 @@ export default function MapView({
         rotation: finalRotation,
         fieldOfView: modelFOV,
         verticalFOV: modelVerticalFOV,
-        range: mount.parameters.range ?? defaultRange,
+        range: models[selectedModel]?.defaultRange ?? mount.parameters.range ?? defaultRange,
         height: cameraHeight,
         tilt: mount.parameters.tilt ?? defaultTilt,
         internalTilt,
@@ -612,6 +626,11 @@ export default function MapView({
         updated.fieldOfView = models[updates.model].defaultFOV;
         updated.verticalFOV = models[updates.model].verticalFOV;
         updated.internalTilt = models[updates.model].internalTilt;
+        // Update range to model default unless the mount locks it
+        const currentMount = mounts.find(m => m.id === c.mountType);
+        if (!currentMount?.locked?.range && models[updates.model].defaultRange != null) {
+          updated.range = models[updates.model].defaultRange;
+        }
       }
       // If mount type changed, reset locked parameters to mount defaults
       if (updates.mountType) {
@@ -697,6 +716,7 @@ export default function MapView({
     reader.readAsText(file);
   };
 
+  if (catalogLoading) return <div className="flex items-center justify-center h-screen"><div className="text-xl">Loading catalog...</div></div>;
   if (isLoading) return <div className="flex items-center justify-center h-screen"><div className="text-xl">Loading map...</div></div>;
   if (error) return <div className="flex items-center justify-center h-screen"><div className="text-xl text-red-600">Error: {error.message}</div></div>;
 

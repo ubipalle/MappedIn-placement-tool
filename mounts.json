@@ -154,6 +154,7 @@
       "defaultFOV": 84,
       "verticalFOV": 44,
       "internalTilt": -22,
+      "defaultRange": 10,
       "description": "Wide-angle sensor, 84° horizontal FOV, 44° vertical FOV, 22° internal downward tilt"
     },
     "UC2N": {
@@ -161,6 +162,7 @@
       "defaultFOV": 60,
       "verticalFOV": 35,
       "internalTilt": -15,
+      "defaultRange": 20,
       "description": "Narrow sensor, 60° horizontal FOV, 35° vertical FOV, 15° internal downward tilt"
     }
   },
